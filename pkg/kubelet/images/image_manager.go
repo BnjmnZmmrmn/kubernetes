@@ -73,19 +73,31 @@ func NewImageManager(recorder record.EventRecorder, imageService kubecontainer.I
 	}
 }
 
-// shouldPullImage returns whether we should pull an image according to
-// the presence and pull policy of the image.
-func shouldPullImage(pullPolicy v1.PullPolicy, imagePresent bool) bool {
+// imagePullPrecheck inspects the pull policy and checks for image presence accordingly,
+// returning (imageRef, err).
+func (m *imageManager) imagePullPrecheck(ctx context.Context, pullPolicy v1.PullPolicy, spec kubecontainer.ImageSpec) (string, error) {
+	// avoid fetching image if always pulling
+	if pullPolicy == v1.PullAlways {
+		return "", nil
+	}
+
+	// fetch imageRef to check image presence
+	imageRef, err := m.imageService.GetImageRef(ctx, spec)
+	if err != nil {
+		return "", ErrImageInspect
+	}
+	imagePresent := imageRef != ""
+
+	if pullPolicy == v1.PullIfNotPresent {
+		return imageRef, nil
+	}
 	if pullPolicy == v1.PullNever {
-		return false
+		if !imagePresent {
+			return "", ErrImageNeverPull
+		}
+		return imageRef, nil
 	}
-
-	if pullPolicy == v1.PullAlways ||
-		(pullPolicy == v1.PullIfNotPresent && (!imagePresent)) {
-		return true
-	}
-
-	return false
+	return imageRef, nil
 }
 
 // records an event using ref, event msg.  log to glog using prefix, msg, logFn
@@ -124,24 +136,25 @@ func (m *imageManager) EnsureImageExists(ctx context.Context, objRef *v1.ObjectR
 		RuntimeHandler: podRuntimeHandler,
 	}
 
-	imageRef, err = m.imageService.GetImageRef(ctx, spec)
+	imageRef, err = m.imagePullPrecheck(ctx, pullPolicy, spec)
 	if err != nil {
-		msg := fmt.Sprintf("Failed to inspect image %q: %v", imgRef, err)
-		m.logIt(objRef, v1.EventTypeWarning, events.FailedToInspectImage, logPrefix, msg, klog.Warning)
-		return "", msg, ErrImageInspect
-	}
-
-	present := imageRef != ""
-	if !shouldPullImage(pullPolicy, present) {
-		if present {
-			msg := fmt.Sprintf("Container image %q already present on machine", imgRef)
-			m.logIt(objRef, v1.EventTypeNormal, events.PulledImage, logPrefix, msg, klog.Info)
-			return imageRef, "", nil
+		msg := ""
+		if err == ErrImageInspect {
+			msg = fmt.Sprintf("Failed to inspect image %q: %v", imgRef, err)
+			m.logIt(objRef, v1.EventTypeWarning, events.FailedToInspectImage, logPrefix, msg, klog.Warning)
 		}
-		msg := fmt.Sprintf("Container image %q is not present with pull policy of Never", imgRef)
-		m.logIt(objRef, v1.EventTypeWarning, events.ErrImageNeverPullPolicy, logPrefix, msg, klog.Warning)
-		return "", msg, ErrImageNeverPull
+		if err == ErrImageNeverPull {
+			msg = fmt.Sprintf("Container image %q is not present with pull policy of Never", imgRef)
+			m.logIt(objRef, v1.EventTypeWarning, events.ErrImageNeverPullPolicy, logPrefix, msg, klog.Warning)
+		}
+		return "", msg, err
 	}
+	if imageRef != "" {
+		msg := fmt.Sprintf("Container image %q already present on machine", imgRef)
+		m.logIt(objRef, v1.EventTypeNormal, events.PulledImage, logPrefix, msg, klog.Info)
+		return imageRef, "", nil
+	}
+		
 
 	backOffKey := fmt.Sprintf("%s_%s", pod.UID, imgRef)
 	if m.backOff.IsInBackOffSinceUpdate(backOffKey, m.backOff.Clock.Now()) {

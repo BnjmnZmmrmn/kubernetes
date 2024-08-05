@@ -94,9 +94,9 @@ func pullerTestCases() []pullerTestCase {
 			qps:        0.0,
 			burst:      0,
 			expected: []pullerExpects{
-				{[]string{"GetImageRef", "PullImage", "GetImageSize"}, nil, true, true},
-				{[]string{"GetImageRef", "PullImage", "GetImageSize"}, nil, true, true},
-				{[]string{"GetImageRef", "PullImage", "GetImageSize"}, nil, true, true},
+				{[]string{"PullImage", "GetImageSize"}, nil, true, true},
+				{[]string{"PullImage", "GetImageSize"}, nil, true, true},
+				{[]string{"PullImage", "GetImageSize"}, nil, true, true},
 			}},
 		// missing image, error PullNever
 		{containerImage: "missing_image",
@@ -149,9 +149,9 @@ func pullerTestCases() []pullerTestCase {
 			qps:        400.0,
 			burst:      600,
 			expected: []pullerExpects{
-				{[]string{"GetImageRef", "PullImage", "GetImageSize"}, nil, true, true},
-				{[]string{"GetImageRef", "PullImage", "GetImageSize"}, nil, true, true},
-				{[]string{"GetImageRef", "PullImage", "GetImageSize"}, nil, true, true},
+				{[]string{"PullImage", "GetImageSize"}, nil, true, true},
+				{[]string{"PullImage", "GetImageSize"}, nil, true, true},
+				{[]string{"PullImage", "GetImageSize"}, nil, true, true},
 			}},
 		// image present, non-zero qps, try to pull when qps exceeded
 		{containerImage: "present_image",
@@ -162,9 +162,9 @@ func pullerTestCases() []pullerTestCase {
 			qps:        2000.0,
 			burst:      0,
 			expected: []pullerExpects{
-				{[]string{"GetImageRef"}, ErrImagePull, true, false},
-				{[]string{"GetImageRef"}, ErrImagePull, true, false},
-				{[]string{"GetImageRef"}, ErrImagePullBackOff, false, false},
+				{[]string(nil), ErrImagePull, true, false},
+				{[]string(nil), ErrImagePull, true, false},
+				{[]string(nil), ErrImagePullBackOff, false, false},
 			}},
 		// error case if image name fails validation due to invalid reference format
 		{containerImage: "FAILED_IMAGE",
